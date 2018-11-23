@@ -188,6 +188,8 @@ def test_xpack_toggle_with_kibana(default_populated_index):
     log.info(
         "\n***** Set/verify X-Pack enabled in elasticsearch. Requires parallel upgrade strategy for full restart."
     )
+    # TODO: see if it's possible to do an actual service update instead of Marathon-based scheduler
+    # swapping.
     config.set_xpack(True, service_name=foldered_name)
     config.verify_commercial_api_status(True, service_name=foldered_name)
     config.verify_xpack_license("basic", service_name=foldered_name)
