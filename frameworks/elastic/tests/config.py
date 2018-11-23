@@ -168,39 +168,54 @@ def get_elasticsearch_master(service_name=SERVICE_NAME):
 
 
 @retrying.retry(wait_fixed=1000, stop_max_delay=120 * 1000, retry_on_result=lambda res: not res)
-def verify_commercial_api_status(is_enabled, service_name=SERVICE_NAME):
+def verify_graph_explore_endpoint(is_expected_to_be_enabled, service_name=SERVICE_NAME):
     query = {
         "query": {"match": {"name": "*"}},
         "vertices": [{"field": "name"}],
         "connections": {"vertices": [{"field": "role"}]},
     }
 
-    # The graph endpoint doesn't exist without X-Pack installed.
-    # In that case Elasticsearch returns a plain text error:
-    # "No handler found for uri [/INDEX_NAME/_xpack/graph/explore] and method [POST]"
-    response = _curl_query(
-        service_name,
-        "POST",
-        "{}/_xpack/_graph/_explore".format(DEFAULT_INDEX_NAME),
-        json_data=query,
-        return_json=is_enabled,
-    )
-    if is_enabled:
-        return is_graph_endpoint_active(response)
-    else:
-        return "No handler found" in response
+    response = explore_graph(service_name, DEFAULT_INDEX_NAME, query)
+
+    return is_expected_to_be_enabled == is_graph_explore_endpoint_active(response)
 
 
-# The graph endpoint response looks something like:
-# {
-#   "took": 200,
-#   "timed_out": false,
-#   "failures": [],
-#   "vertices": [],
-#   "connections": []
-# }
-def is_graph_endpoint_active(response):
-    return isinstance(response["vertices"], list) and isinstance(response["connections"], list)
+def verify_commercial_api_status(is_expected_to_be_enabled, service_name=SERVICE_NAME):
+    return verify_graph_explore_endpoint(is_expected_to_be_enabled, service_name)
+
+
+# On Elastic 6.x, the "Graph Explore API" is available when the Elasticsearch cluster is configured
+# with a "trial" X-Pack license. When configured with a "basic" license (the default) the API will
+# respond with an HTTP 403.
+#
+# A "Graph Explore API" response will look something like:
+#   1. With a "trial" license:
+#   {
+#     "took": 183,
+#     "timed_out": false,
+#     "failures": [],
+#     "vertices": [...],
+#     "connections": [...]
+#   }
+#
+#   2. With a "basic" license:
+#   {
+#     "error": {
+#       "root_cause": [
+#         {
+#           "type": "security_exception",
+#           "reason": "current license is non-compliant for [graph]",
+#           "license.expired.feature": "graph"
+#         }
+#       ],
+#       "type": "security_exception",
+#       "reason": "current license is non-compliant for [graph]",
+#       "license.expired.feature": "graph"
+#     },
+#     "status": 403
+#   }
+def is_graph_explore_endpoint_active(response):
+    return isinstance(response.get("vertices"), list) and isinstance(response.get("connections"), list)
 
 
 def set_xpack(is_enabled, service_name=SERVICE_NAME):
@@ -217,14 +232,35 @@ def update_app(service_name, options, expected_task_count):
     sdk_tasks.check_running(service_name, expected_task_count)
 
 
+def get_xpack_license(service_name=SERVICE_NAME):
+    return _curl_query(service_name, "GET", "_xpack/license")
+
+
 @retrying.retry(wait_fixed=1000, stop_max_delay=120 * 1000, retry_on_result=lambda res: not res)
-def verify_xpack_license(service_name=SERVICE_NAME):
-    xpack_license = _curl_query(service_name, "GET", "_xpack/license")
-    if "license" not in xpack_license:
-        log.warning("Missing 'license' key in _xpack/license response: {}".format(xpack_license))
+def verify_xpack_license(license_type, service_name=SERVICE_NAME):
+    response = get_xpack_license(service_name)
+
+    if "license" not in response:
+        log.warning("Missing 'license' key in _xpack/license response: {}".format(response))
         return False  # retry
-    assert xpack_license["license"]["status"] == "active"
+
+    assert response["license"]["status"] == "active"
+    assert response["license"]["type"] == license_type
+
     return True  # done
+
+
+def explore_graph(service_name=SERVICE_NAME, index_name=DEFAULT_INDEX_NAME, query={}):
+    return _curl_query(
+        service_name,
+        "POST",
+        "{}/_xpack/_graph/_explore".format(index_name),
+        json_data=query
+    )
+
+
+def start_trial_license(service_name=SERVICE_NAME):
+    return _curl_query(service_name, "POST", "{}/_xpack/license/start_trial?acknowledge=true")
 
 
 def get_elasticsearch_indices_stats(index_name, service_name=SERVICE_NAME):
@@ -260,7 +296,8 @@ def get_elasticsearch_nodes_info(service_name=SERVICE_NAME):
 
 
 # Here we only retry if the command itself failed, or if the data couldn't be parsed as JSON when return_json=True.
-# Upstream callers may want to have their own retry loop against the content of the returned data (e.g. expected field is missing).
+# Upstream callers may want to have their own retry loop against the content of the returned data
+# (e.g. expected field is missing).
 @retrying.retry(wait_fixed=1000, stop_max_delay=120 * 1000, retry_on_result=lambda res: res is None)
 def _curl_query(
     service_name, method, endpoint, json_data=None, role="master", https=False, return_json=True

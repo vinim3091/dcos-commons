@@ -196,13 +196,11 @@ class ServiceBundle(Bundle):
         else:
             return json.loads(stdout)
 
-    @config.retry
     def create_configuration_ids_file(self):
         self.write_file(
             "service_v1_configuration_ids.json", self.configuration_ids(), serialize_to_json=True
         )
 
-    @config.retry
     def create_configuration_files(self):
         for configuration_id in self.configuration_ids():
             self.write_file(

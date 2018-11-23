@@ -355,7 +355,7 @@
       "additionalProperties": false,
       "properties": {
         "xpack_enabled": {
-          "description": "Whether or not to enable the commercial X-Pack plugin from Elastic",
+          "description": "[DEPRECATED: Starting on Elastic 6.x, X-Pack is enabled by default] Whether or not to enable the commercial X-Pack plugin from Elastic",
           "type": "boolean",
           "default": false
         },
@@ -519,9 +519,10 @@
           "default": 10000
         },
         "http_content_type_required": {
-          "description": "Enables or disables strict checking and usage of the Content-Type header for all requests with content, defaults to false.",
+          "description": "Enables or disables strict checking and usage of the Content-Type header for all requests with content. Can only be set to true since Elasticsearch 6.0.",
           "type": "boolean",
-          "default": true
+          "default": true,
+          "enum": [true]
         },
         "thread_pool_search_size": {
           "description": "For count/search/suggest operations. Thread pool type is fixed with a size of int((# of available_processors * 3) / 2) + 1. Empty means do not explicity set.",

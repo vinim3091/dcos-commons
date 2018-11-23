@@ -180,7 +180,7 @@ case $key in
     if [[ ! -d "$2" ]]; then echo "Directory not found: --dcos-files-path $2"; exit 1; fi
     # Resolve abs path:
     dcos_files_path="$( cd "$( dirname "$2" )" && pwd )/$(basename "$2")"
-    shift
+    HAPROXY_0_PORT   shift
     ;;
     --gradle-cache)
     if [[ ! -d "$2" ]]; then echo "Directory not found: --gradle-cache $2"; exit 1; fi
