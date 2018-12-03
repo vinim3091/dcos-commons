@@ -8,6 +8,7 @@ import sdk_marathon
 import sdk_networks
 import sdk_plan
 import sdk_tasks
+import sdk_upgrade
 import sdk_utils
 
 log = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ DEFAULT_SETTINGS_MAPPINGS = {
     retry_on_result=lambda res: not res,
 )
 def check_kibana_adminrouter_integration(path):
-    curl_cmd = 'curl -I -k -H "Authorization: token={}" -s {}/{}'.format(
+    curl_cmd = 'curl -L -I -k -H "Authorization: token={}" -s {}/{}'.format(
         sdk_utils.dcos_token(), sdk_utils.dcos_url().rstrip("/"), path.lstrip("/")
     )
     rc, stdout, _ = sdk_cmd.master_ssh(curl_cmd)
@@ -219,9 +220,31 @@ def is_graph_explore_endpoint_active(response):
 
 
 def set_xpack(is_enabled, service_name=SERVICE_NAME):
-    # Toggling X-Pack requires full cluster restart, not a rolling restart
-    options = {"TASKCFG_ALL_XPACK_ENABLED": str(is_enabled).lower(), "UPDATE_STRATEGY": "parallel"}
-    update_app(service_name, options, DEFAULT_TASK_COUNT)
+    sdk_upgrade.update_or_upgrade_or_downgrade(
+        PACKAGE_NAME,
+        service_name,
+        None,
+        {
+            "elasticsearch": {
+                "xpack_enabled": True
+            }
+        },
+        DEFAULT_TASK_COUNT
+    )
+
+
+def set_xpack(is_enabled, service_name=SERVICE_NAME):
+    sdk_upgrade.update_or_upgrade_or_downgrade(
+        PACKAGE_NAME,
+        service_name,
+        None,
+        {
+            "elasticsearch": {
+                "xpack_enabled": True
+            }
+        },
+        DEFAULT_TASK_COUNT
+    )
 
 
 def update_app(service_name, options, expected_task_count):
@@ -260,7 +283,7 @@ def explore_graph(service_name=SERVICE_NAME, index_name=DEFAULT_INDEX_NAME, quer
 
 
 def start_trial_license(service_name=SERVICE_NAME):
-    return _curl_query(service_name, "POST", "{}/_xpack/license/start_trial?acknowledge=true")
+    return _curl_query(service_name, "POST", "_xpack/license/start_trial?acknowledge=true")
 
 
 def get_elasticsearch_indices_stats(index_name, service_name=SERVICE_NAME):

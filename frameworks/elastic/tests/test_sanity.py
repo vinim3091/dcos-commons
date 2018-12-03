@@ -10,7 +10,6 @@ import sdk_networks
 import sdk_plan
 import sdk_tasks
 import sdk_upgrade
-import sdk_utils
 from tests import config
 
 log = logging.getLogger(__name__)
@@ -19,7 +18,7 @@ foldered_name = "elastic"
 current_expected_task_count = config.DEFAULT_TASK_COUNT
 
 
-# @pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def configure_package(configure_security):
     try:
         log.info("Ensure elasticsearch and kibana are uninstalled...")
@@ -39,8 +38,8 @@ def configure_package(configure_security):
         sdk_install.uninstall(config.KIBANA_PACKAGE_NAME, config.KIBANA_PACKAGE_NAME)
         sdk_install.uninstall(config.PACKAGE_NAME, foldered_name)
 
-
-# @pytest.fixture(autouse=True)
+        #
+@pytest.fixture(autouse=True)
 def pre_test_setup():
     sdk_tasks.check_running(foldered_name, current_expected_task_count)
     config.wait_for_expected_nodes_to_exist(
@@ -188,11 +187,26 @@ def test_xpack_toggle_with_kibana(default_populated_index):
     log.info(
         "\n***** Set/verify X-Pack enabled in elasticsearch. Requires parallel upgrade strategy for full restart."
     )
-    # TODO: see if it's possible to do an actual service update instead of Marathon-based scheduler
-    # swapping.
-    config.set_xpack(True, service_name=foldered_name)
-    config.verify_commercial_api_status(True, service_name=foldered_name)
+    sdk_upgrade.update_or_upgrade_or_downgrade(
+        config.PACKAGE_NAME,
+        foldered_name,
+        None,
+        {
+            "service": {
+                "upgrade_strategy": "parallel"
+            },
+            "elasticsearch": {
+                "xpack_enabled": True
+            }
+        },
+        current_expected_task_count
+    )
+    config.verify_commercial_api_status(False, service_name=foldered_name)
+
+    # Basic license is enabled by default,
     config.verify_xpack_license("basic", service_name=foldered_name)
+
+    # Start trial license.
     config.start_trial_license(service_name=foldered_name)
     config.verify_xpack_license("trial", service_name=foldered_name)
 
@@ -221,9 +235,7 @@ def test_xpack_toggle_with_kibana(default_populated_index):
     #     wait_for_deployment=False,
     #     insert_strict_options=False,
     # )
-    config.check_kibana_adminrouter_integration(
-        "service/{}/login".format(config.KIBANA_PACKAGE_NAME)
-    )
+    config.check_kibana_adminrouter_integration("service/{}/".format(config.KIBANA_PACKAGE_NAME))
     log.info("\n***** Uninstall kibana with X-Pack enabled")
     # sdk_install.uninstall(config.KIBANA_PACKAGE_NAME, config.KIBANA_PACKAGE_NAME)
 
@@ -236,8 +248,14 @@ def test_xpack_toggle_with_kibana(default_populated_index):
     )
     assert doc["_source"]["name"] == "X-Pack"
 
-    # reset upgrade strategy to serial
-    config.update_app(foldered_name, {"UPDATE_STRATEGY": "serial"}, current_expected_task_count)
+    # Re-set upgrade strategy to serial.
+    sdk_upgrade.update_or_upgrade_or_downgrade(
+        config.PACKAGE_NAME,
+        foldered_name,
+        None,
+        {"service": {"upgrade_strategy": "serial"}},
+        current_expected_task_count,
+    )
 
     sdk_plan.wait_for_completed_deployment(foldered_name)
     sdk_plan.wait_for_completed_recovery(foldered_name)
